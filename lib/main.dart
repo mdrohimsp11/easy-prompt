@@ -21,43 +21,25 @@ class PromptItem {
   });
 }
 
+const ghBase =
+    'https://raw.githubusercontent.com/mdrohimsp11/easy-prompt/main/';
+
 const categories = ['All', 'Trending', 'Love', 'Cinematic'];
 
-const _sampleVideo =
-    'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4';
-
+// নতুন ভিডিও যোগ করতে নিচের PromptItem(...) ব্লকটা কপি করে বসান,
+// id, ফাইলের নাম (video2.mp4, thumb2.jpg) আর প্রম্পট বদলান।
 const allItems = <PromptItem>[
   PromptItem(
     id: '1',
-    title: 'Trending AI Walk Couple Video Editing',
+    title: 'Plush ABC Learning Video',
     category: 'Trending',
-    imageUrl: 'https://picsum.photos/seed/walk/400/600',
-    videoUrl: _sampleVideo,
-    prompt: 'A couple walking on a lit-up street at night, cinematic, 4k...',
-  ),
-  PromptItem(
-    id: '2',
-    title: 'Miniature food making video prompt',
-    category: 'Cinematic',
-    imageUrl: 'https://picsum.photos/seed/food/400/600',
-    videoUrl: _sampleVideo,
-    prompt: 'Tiny chefs cooking a giant dosa on a pan, macro shot...',
-  ),
-  PromptItem(
-    id: '3',
-    title: 'Family dinner nostalgic scene',
-    category: 'Love',
-    imageUrl: 'https://picsum.photos/seed/family/400/600',
-    videoUrl: _sampleVideo,
-    prompt: 'A warm family dinner in a traditional kitchen, soft light...',
-  ),
-  PromptItem(
-    id: '4',
-    title: 'Tiny chefs and the giant dosa',
-    category: 'Trending',
-    imageUrl: 'https://picsum.photos/seed/chefs/400/600',
-    videoUrl: _sampleVideo,
-    prompt: 'Miniature chefs around a huge dosa, steam rising, 3D style...',
+    imageUrl: '${ghBase}thumb1.jpg',
+    videoUrl: '${ghBase}video1.mp4',
+    prompt:
+        'A cute soft plush toy character in a cozy pastel nursery, standing '
+        'next to a giant fluffy letter A, waving and smiling, felt and fabric '
+        'texture, warm soft lighting, gentle camera push-in, bright playful '
+        'colors, children educational style, smooth motion, 4k',
   ),
 ];
 
