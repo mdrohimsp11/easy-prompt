@@ -1,7 +1,15 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
+
+// GitHub রিপোজিটরির তথ্য
+const repoOwner = 'mdrohimsp11';
+const repoName = 'easy-prompt';
+const mediaFolder = 'media';
 
 class PromptItem {
   final String id;
@@ -21,27 +29,114 @@ class PromptItem {
   });
 }
 
-const ghBase =
-    'https://raw.githubusercontent.com/mdrohimsp11/easy-prompt/main/';
-
 const categories = ['All', 'Trending', 'Love', 'Cinematic'];
 
-// নতুন ভিডিও যোগ করতে নিচের PromptItem(...) ব্লকটা কপি করে বসান,
-// id, ফাইলের নাম (video2.mp4, thumb2.jpg) আর প্রম্পট বদলান।
-const allItems = <PromptItem>[
-  PromptItem(
-    id: '1',
-    title: 'Plush ABC Learning Video',
-    category: 'Trending',
-    imageUrl: '${ghBase}thumb1.jpg',
-    videoUrl: '${ghBase}video1.mp4',
-    prompt:
-        'A cute soft plush toy character in a cozy pastel nursery, standing '
-        'next to a giant fluffy letter A, waving and smiling, felt and fabric '
-        'texture, warm soft lighting, gentle camera push-in, bright playful '
-        'colors, children educational style, smooth motion, 4k',
-  ),
-];
+// media ফোল্ডার দেখে নিজে নিজে তালিকা বানায়।
+// প্রতিটা ভিডিওর জন্য একই নামে .mp4, .jpg, .txt ফাইল লাগে।
+class ItemsStore extends ChangeNotifier {
+  List<PromptItem> items = [];
+  bool loading = true;
+  String? error;
+
+  Future<void> load() async {
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      final api = Uri.parse(
+          'https://api.github.com/repos/$repoOwner/$repoName/contents/$mediaFolder');
+      final res = await http
+          .get(api, headers: {'Accept': 'application/vnd.github+json'})
+          .timeout(const Duration(seconds: 20));
+      if (res.statusCode != 200) {
+        throw 'GitHub error ${res.statusCode}';
+      }
+      final files = (jsonDecode(res.body) as List)
+          .map((e) => e as Map<String, dynamic>)
+          .toList();
+
+      final videos = <String, String>{};
+      final images = <String, String>{};
+      final texts = <String, String>{};
+      for (final f in files) {
+        if (f['type'] != 'file') continue;
+        final name = f['name'] as String;
+        final url = f['download_url'] as String?;
+        if (url == null) continue;
+        final dot = name.lastIndexOf('.');
+        if (dot <= 0) continue;
+        final base = name.substring(0, dot);
+        final ext = name.substring(dot + 1).toLowerCase();
+        if (ext == 'mp4') {
+          videos[base] = url;
+        } else if (ext == 'jpg' ||
+            ext == 'jpeg' ||
+            ext == 'png' ||
+            ext == 'webp') {
+          images[base] = url;
+        } else if (ext == 'txt') {
+          texts[base] = url;
+        }
+      }
+
+      final bases = videos.keys.toList()..sort((a, b) => b.compareTo(a));
+      items = await Future.wait(
+        bases.map((b) => _build(b, videos[b]!, images[b], texts[b])),
+      );
+    } catch (e) {
+      error = e.toString();
+    }
+    loading = false;
+    notifyListeners();
+  }
+
+  Future<PromptItem> _build(
+      String base, String videoUrl, String? imageUrl, String? textUrl) async {
+    var title = base
+        .replaceFirst(RegExp(r'^\d+[-_]?'), '')
+        .replaceAll(RegExp(r'[-_]'), ' ')
+        .trim();
+    if (title.isEmpty) title = base;
+    var category = 'Trending';
+    var prompt = '';
+    if (textUrl != null) {
+      try {
+        final r = await http
+            .get(Uri.parse(textUrl))
+            .timeout(const Duration(seconds: 15));
+        if (r.statusCode == 200) {
+          final text = utf8
+              .decode(r.bodyBytes)
+              .replaceAll('\r', '')
+              .replaceFirst('\uFEFF', '');
+          final lines = text.split('\n');
+          if (lines.isNotEmpty && lines[0].trim().isNotEmpty) {
+            title = lines[0].trim();
+          }
+          if (lines.length > 1) {
+            final c = lines[1].trim().toLowerCase();
+            for (final k in categories) {
+              if (k != 'All' && k.toLowerCase() == c) category = k;
+            }
+          }
+          if (lines.length > 2) {
+            prompt = lines.sublist(2).join('\n').trim();
+          }
+        }
+      } catch (_) {}
+    }
+    return PromptItem(
+      id: base,
+      title: title,
+      category: category,
+      imageUrl: imageUrl ?? '',
+      videoUrl: videoUrl,
+      prompt: prompt,
+    );
+  }
+}
+
+final itemsStore = ItemsStore();
 
 class SavedStore extends ChangeNotifier {
   static const _key = 'saved_ids';
@@ -109,6 +204,7 @@ class _RootShellState extends State<RootShell> {
   void initState() {
     super.initState();
     store.load();
+    itemsStore.load();
   }
 
   @override
@@ -155,7 +251,7 @@ class _HomePageState extends State<HomePage> {
   String query = '';
   bool searching = false;
 
-  List<PromptItem> get filtered => allItems.where((p) {
+  List<PromptItem> get filtered => itemsStore.items.where((p) {
         final catOk = category == 'All' || p.category == category;
         final qOk = query.isEmpty ||
             p.title.toLowerCase().contains(query.toLowerCase());
@@ -231,7 +327,37 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         const SizedBox(height: 12),
-        Expanded(child: PromptGrid(items: filtered, store: widget.store)),
+        Expanded(
+          child: AnimatedBuilder(
+            animation: itemsStore,
+            builder: (_, __) {
+              if (itemsStore.loading && itemsStore.items.isEmpty) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (itemsStore.items.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        itemsStore.error == null
+                            ? 'এখনো কোনো ভিডিও নেই'
+                            : 'লোড করা যায়নি\n${itemsStore.error}',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton(
+                        onPressed: itemsStore.load,
+                        child: const Text('আবার চেষ্টা করুন'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              return PromptGrid(items: filtered, store: widget.store);
+            },
+          ),
+        ),
       ],
     );
   }
@@ -247,18 +373,22 @@ class PromptGrid extends StatelessWidget {
     if (items.isEmpty) {
       return const Center(child: Text('কিছু পাওয়া যায়নি'));
     }
-    return AnimatedBuilder(
-      animation: store,
-      builder: (_, __) => GridView.builder(
-        padding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          mainAxisSpacing: 14,
-          crossAxisSpacing: 14,
-          childAspectRatio: 0.66,
+    return RefreshIndicator(
+      onRefresh: itemsStore.load,
+      child: AnimatedBuilder(
+        animation: store,
+        builder: (_, __) => GridView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 14,
+            crossAxisSpacing: 14,
+            childAspectRatio: 0.66,
+          ),
+          itemCount: items.length,
+          itemBuilder: (_, i) => PromptCard(item: items[i], store: store),
         ),
-        itemCount: items.length,
-        itemBuilder: (_, i) => PromptCard(item: items[i], store: store),
       ),
     );
   }
@@ -287,12 +417,14 @@ class PromptCard extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Image.network(
-                      item.imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          const ColoredBox(color: Colors.black26),
-                    ),
+                    item.imageUrl.isEmpty
+                        ? const ColoredBox(color: Colors.black26)
+                        : Image.network(
+                            item.imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                const ColoredBox(color: Colors.black26),
+                          ),
                     const Center(
                       child: CircleAvatar(
                         radius: 26,
@@ -344,9 +476,10 @@ class SavedPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: store,
+      animation: Listenable.merge([store, itemsStore]),
       builder: (_, __) {
-        final saved = allItems.where((p) => store.isSaved(p.id)).toList();
+        final saved =
+            itemsStore.items.where((p) => store.isSaved(p.id)).toList();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -402,19 +535,23 @@ class DetailPage extends StatefulWidget {
 
 class _DetailPageState extends State<DetailPage> {
   late final VideoPlayerController controller;
+  bool failed = false;
 
   @override
   void initState() {
     super.initState();
-    controller = VideoPlayerController.networkUrl(Uri.parse(widget.item.videoUrl))
-      ..initialize().then((_) {
-        if (mounted) {
-          setState(() {});
-          controller
-            ..setLooping(true)
-            ..play();
-        }
-      });
+    controller =
+        VideoPlayerController.networkUrl(Uri.parse(widget.item.videoUrl));
+    controller.initialize().then((_) {
+      if (mounted) {
+        setState(() {});
+        controller
+          ..setLooping(true)
+          ..play();
+      }
+    }).catchError((Object e) {
+      if (mounted) setState(() => failed = true);
+    });
   }
 
   @override
@@ -460,7 +597,9 @@ class _DetailPageState extends State<DetailPage> {
                       }),
                       child: VideoPlayer(controller),
                     )
-                  : const Center(child: CircularProgressIndicator()),
+                  : failed
+                      ? const Center(child: Text('ভিডিও লোড হয়নি'))
+                      : const Center(child: CircularProgressIndicator()),
             ),
           ),
           const SizedBox(height: 16),
