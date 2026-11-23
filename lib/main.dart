@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
@@ -10,6 +11,13 @@ import 'package:video_player/video_player.dart';
 const repoOwner = 'mdrohimsp11';
 const repoName = 'easy-prompt';
 const mediaFolder = 'media';
+
+// বিজ্ঞাপন: এখন টেস্ট বিজ্ঞাপন চলছে।
+// Play Store-এ তোলার আগে নিচের true-কে false করবেন।
+const useTestAds = true;
+const bannerUnitId = useTestAds
+    ? 'ca-app-pub-3940256099942544/6300978111'
+    : 'ca-app-pub-7904413176110804/3467983938';
 
 class PromptItem {
   final String id;
@@ -168,6 +176,7 @@ const kAccent = Color(0xFF0D2F5E);
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  MobileAds.instance.initialize();
   runApp(const EasyPromptApp());
 }
 
@@ -185,6 +194,65 @@ class EasyPromptApp extends StatelessWidget {
         colorScheme: const ColorScheme.dark(primary: Colors.white),
       ),
       home: const RootShell(),
+    );
+  }
+}
+
+class BannerAdBox extends StatefulWidget {
+  const BannerAdBox({super.key});
+
+  @override
+  State<BannerAdBox> createState() => _BannerAdBoxState();
+}
+
+class _BannerAdBoxState extends State<BannerAdBox> {
+  BannerAd? _ad;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ad = BannerAd(
+      adUnitId: bannerUnitId,
+      size: AdSize.banner,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (_) {
+          if (mounted) setState(() => _loaded = true);
+        },
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose();
+          if (mounted) {
+            setState(() {
+              _ad = null;
+              _loaded = false;
+            });
+          }
+        },
+      ),
+    )..load();
+  }
+
+  @override
+  void dispose() {
+    _ad?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ad = _ad;
+    if (!_loaded || ad == null) return const SizedBox.shrink();
+    return Container(
+      color: kBg,
+      width: double.infinity,
+      height: ad.size.height.toDouble(),
+      alignment: Alignment.center,
+      child: SizedBox(
+        width: ad.size.width.toDouble(),
+        height: ad.size.height.toDouble(),
+        child: AdWidget(ad: ad),
+      ),
     );
   }
 }
@@ -215,7 +283,14 @@ class _RootShellState extends State<RootShell> {
       const MenuPage(),
     ];
     return Scaffold(
-      body: SafeArea(child: IndexedStack(index: index, children: pages)),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(child: IndexedStack(index: index, children: pages)),
+            const BannerAdBox(),
+          ],
+        ),
+      ),
       bottomNavigationBar: NavigationBar(
         backgroundColor: kBg,
         indicatorColor: Colors.transparent,
@@ -614,7 +689,13 @@ class _DetailPageState extends State<DetailPage> {
             child: Text(item.prompt, style: const TextStyle(fontSize: 16)),
           ),
           const SizedBox(height: 16),
-          FilledButton.icon(
+        ],
+      ),
+      // কপি বাটন নিচে স্থির থাকে, প্রম্পট যত লম্বাই হোক
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: FilledButton.icon(
             icon: const Icon(Icons.copy),
             label: const Text('Copy Prompt'),
             onPressed: () {
@@ -623,7 +704,7 @@ class _DetailPageState extends State<DetailPage> {
                   const SnackBar(content: Text('Prompt কপি হয়েছে')));
             },
           ),
-        ],
+        ),
       ),
     );
   }
