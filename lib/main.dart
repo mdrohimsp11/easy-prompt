@@ -176,12 +176,6 @@ const kAccent = Color(0xFF0D2F5E);
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // বিজ্ঞাপন একটু দেরিতে চালু হবে, যাতে অ্যাপ আগে খোলে
-  Future.delayed(const Duration(seconds: 2), () {
-    try {
-      MobileAds.instance.initialize();
-    } catch (_) {}
-  });
   runApp(const EasyPromptApp());
 }
 
@@ -197,6 +191,12 @@ class EasyPromptApp extends StatelessWidget {
         brightness: Brightness.dark,
         scaffoldBackgroundColor: kBg,
         colorScheme: const ColorScheme.dark(primary: Colors.white),
+        navigationBarTheme: NavigationBarThemeData(
+          iconTheme: WidgetStateProperty.all(
+              const IconThemeData(color: Colors.white)),
+          labelTextStyle: WidgetStateProperty.all(
+              const TextStyle(color: Colors.white70, fontSize: 12)),
+        ),
       ),
       home: const RootShell(),
     );
@@ -213,11 +213,23 @@ class BannerAdBox extends StatefulWidget {
 class _BannerAdBoxState extends State<BannerAdBox> {
   BannerAd? _ad;
   bool _loaded = false;
+  String? _err;
 
   @override
   void initState() {
     super.initState();
-    _ad = BannerAd(
+    _start();
+  }
+
+  Future<void> _start() async {
+    try {
+      await MobileAds.instance.initialize();
+    } catch (e) {
+      if (mounted) setState(() => _err = 'init: $e');
+      return;
+    }
+    if (!mounted) return;
+    final ad = BannerAd(
       adUnitId: bannerUnitId,
       size: AdSize.banner,
       request: const AdRequest(),
@@ -231,11 +243,14 @@ class _BannerAdBoxState extends State<BannerAdBox> {
             setState(() {
               _ad = null;
               _loaded = false;
+              _err = 'ad ${error.code}: ${error.message}';
             });
           }
         },
       ),
-    )..load();
+    );
+    _ad = ad;
+    ad.load();
   }
 
   @override
@@ -247,6 +262,16 @@ class _BannerAdBoxState extends State<BannerAdBox> {
   @override
   Widget build(BuildContext context) {
     final ad = _ad;
+    if (_err != null) {
+      // পরীক্ষার জন্য: বিজ্ঞাপন না এলে কারণ দেখায়
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(6),
+        color: kBg,
+        child: Text(_err!,
+            style: const TextStyle(fontSize: 11, color: Colors.white54)),
+      );
+    }
     if (!_loaded || ad == null) return const SizedBox.shrink();
     return Container(
       color: kBg,
