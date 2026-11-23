@@ -9,17 +9,6 @@ import 'package:video_player/video_player.dart';
 
 // GitHub রিপোজিটরির তথ্য
 const repoOwner = 'mdrohimsp11';
-import 'dart:convert';
-
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:video_player/video_player.dart';
-
-// GitHub রিপোজিটরির তথ্য
-const repoOwner = 'mdrohimsp11';
 const repoName = 'easy-prompt';
 const mediaFolder = 'media';
 
