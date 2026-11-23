@@ -39,7 +39,7 @@ class PromptItem {
 
 const categories = ['All', 'Trending', 'Love', 'Cinematic'];
 
-// media ফোল্ডার দেখে নিজে নিজে তালিকা বানায়।
+// media ফোল্ডার থেকে নিজে নিজে তালিকা বানায়।
 // প্রতিটা ভিডিওর জন্য একই নামে .mp4, .jpg, .txt ফাইল লাগে।
 class ItemsStore extends ChangeNotifier {
   List<PromptItem> items = [];
@@ -176,7 +176,12 @@ const kAccent = Color(0xFF0D2F5E);
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  MobileAds.instance.initialize();
+  // বিজ্ঞাপন একটু দেরিতে চালু হবে, যাতে অ্যাপ আগে খোলে
+  Future.delayed(const Duration(seconds: 2), () {
+    try {
+      MobileAds.instance.initialize();
+    } catch (_) {}
+  });
   runApp(const EasyPromptApp());
 }
 
@@ -458,7 +463,7 @@ class PromptGrid extends StatelessWidget {
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2,
             mainAxisSpacing: 14,
-            crossAxisSpacing: 14,
+            crossAxisSpacing: 16,
             childAspectRatio: 0.66,
           ),
           itemCount: items.length,
