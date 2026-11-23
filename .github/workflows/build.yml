@@ -39,9 +39,20 @@ jobs:
           sed -i '0,/^android {/s//android {\n    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }\n/' android/app/build.gradle.kts
           grep -n -A4 "^android {" android/app/build.gradle.kts
 
+      - name: Turn off minify and add keep rules
+        run: |
+          cat > android/app/proguard-rules.pro <<'EOF'
+          -keep class androidx.work.** { *; }
+          -keep class androidx.room.** { *; }
+          -keep class * extends androidx.room.RoomDatabase { *; }
+          -dontwarn androidx.work.**
+          EOF
+          sed -i 's/signingConfig = signingConfigs.getByName("debug")/signingConfig = signingConfigs.getByName("debug")\n            isMinifyEnabled = false\n            isShrinkResources = false\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")/' android/app/build.gradle.kts
+          grep -n -B3 -A6 "release {" android/app/build.gradle.kts
+
       - run: flutter pub get
 
-      - run: flutter build apk --release --no-shrink
+      - run: flutter build apk --release
 
       - uses: actions/upload-artifact@v4
         with:
