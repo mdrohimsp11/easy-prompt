@@ -11,6 +11,8 @@ import 'package:video_player/video_player.dart';
 const repoOwner = 'mdrohimsp11';
 const repoName = 'easy-prompt';
 const mediaFolder = 'media';
+const rawBase =
+    'https://raw.githubusercontent.com/$repoOwner/$repoName/main/$mediaFolder';
 
 // বিজ্ঞাপন: এখন টেস্ট বিজ্ঞাপন চলছে।
 // Play Store-এ তোলার আগে নিচের true-কে false করবেন।
@@ -54,31 +56,59 @@ class ItemsStore extends ChangeNotifier {
   bool loading = true;
   String? error;
 
+  // ফাইলের নাম ও লিংকের তালিকা আনে
+  Future<List<MapEntry<String, String>>> _listFiles() async {
+    // ১) index.json (GitHub-এর সীমা নেই)
+    try {
+      final bust = DateTime.now().millisecondsSinceEpoch ~/ 60000;
+      final r = await http
+          .get(Uri.parse('$rawBase/index.json?t=$bust'))
+          .timeout(const Duration(seconds: 20));
+      if (r.statusCode == 200) {
+        final names = (jsonDecode(utf8.decode(r.bodyBytes)) as List)
+            .map((e) => e.toString())
+            .toList();
+        return names
+            .map((n) => MapEntry(n, '$rawBase/${Uri.encodeComponent(n)}'))
+            .toList();
+      }
+    } catch (_) {}
+
+    // ২) আগের পথ (GitHub API), index.json না পেলে
+    final api = Uri.parse(
+        'https://api.github.com/repos/$repoOwner/$repoName/contents/$mediaFolder');
+    final res = await http
+        .get(api, headers: {'Accept': 'application/vnd.github+json'})
+        .timeout(const Duration(seconds: 20));
+    if (res.statusCode != 200) {
+      throw 'GitHub error ${res.statusCode}';
+    }
+    final files = (jsonDecode(res.body) as List)
+        .map((e) => e as Map<String, dynamic>)
+        .toList();
+    final out = <MapEntry<String, String>>[];
+    for (final f in files) {
+      if (f['type'] != 'file') continue;
+      final url = f['download_url'] as String?;
+      if (url == null) continue;
+      out.add(MapEntry(f['name'] as String, url));
+    }
+    return out;
+  }
+
   Future<void> load() async {
     loading = true;
     error = null;
     notifyListeners();
     try {
-      final api = Uri.parse(
-          'https://api.github.com/repos/$repoOwner/$repoName/contents/$mediaFolder');
-      final res = await http
-          .get(api, headers: {'Accept': 'application/vnd.github+json'})
-          .timeout(const Duration(seconds: 20));
-      if (res.statusCode != 200) {
-        throw 'GitHub error ${res.statusCode}';
-      }
-      final files = (jsonDecode(res.body) as List)
-          .map((e) => e as Map<String, dynamic>)
-          .toList();
+      final files = await _listFiles();
 
       final videos = <String, String>{};
       final images = <String, String>{};
       final texts = <String, String>{};
       for (final f in files) {
-        if (f['type'] != 'file') continue;
-        final name = f['name'] as String;
-        final url = f['download_url'] as String?;
-        if (url == null) continue;
+        final name = f.key;
+        final url = f.value;
         final dot = name.lastIndexOf('.');
         if (dot <= 0) continue;
         final base = name.substring(0, dot);
