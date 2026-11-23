@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths-ignore:
+      - "media/**"
 
 jobs:
   build:
@@ -26,6 +28,11 @@ jobs:
       - name: Add INTERNET permission
         run: |
           sed -i '0,/<application/s//<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' android/app/src/main/AndroidManifest.xml
+
+      - name: Add AdMob app ID
+        run: |
+          sed -i '0,/<activity/s//<meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-7904413176110804~1103429064"\/>\n        <activity/' android/app/src/main/AndroidManifest.xml
+          grep APPLICATION_ID android/app/src/main/AndroidManifest.xml
 
       - run: flutter pub get
 
