@@ -34,17 +34,10 @@ jobs:
           sed -i '0,/<activity/s//<meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-7904413176110804~1103429064"\/>\n        <activity/' android/app/src/main/AndroidManifest.xml
           grep APPLICATION_ID android/app/src/main/AndroidManifest.xml
 
-      - name: Disable all lint tasks
+      - name: Disable lint checks for release build
         run: |
-          cat >> android/app/build.gradle.kts <<'EOF'
-
-          tasks.whenTaskAdded {
-              if (name.contains("lint", ignoreCase = true)) {
-                  enabled = false
-              }
-          }
-          EOF
-          tail -8 android/app/build.gradle.kts
+          sed -i '0,/^android {/s//android {\n    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }\n/' android/app/build.gradle.kts
+          grep -n -A4 "^android {" android/app/build.gradle.kts
 
       - run: flutter pub get
 
