@@ -47,3 +47,25 @@ jobs:
         with:
           name: easy-prompt-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Launch test on emulator
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          script: |
+            adb install -r build/app/outputs/flutter-apk/app-release.apk
+            adb logcat -c
+            adb shell monkey -p com.example.easyprompt.easy_prompt -c android.intent.category.LAUNCHER 1
+            sleep 25
+            echo ===== CRASH LOG =====
+            adb logcat -d -b crash
+            echo ===== FILTERED LOG =====
+            adb logcat -d | grep -E "FATAL|AndroidRuntime|easy_prompt|Exception" | head -80
