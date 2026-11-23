@@ -9,6 +9,17 @@ import 'package:video_player/video_player.dart';
 
 // GitHub রিপোজিটরির তথ্য
 const repoOwner = 'mdrohimsp11';
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player/video_player.dart';
+
+// GitHub রিপোজিটরির তথ্য
+const repoOwner = 'mdrohimsp11';
 const repoName = 'easy-prompt';
 const mediaFolder = 'media';
 
@@ -18,6 +29,14 @@ const useTestAds = true;
 const bannerUnitId = useTestAds
     ? 'ca-app-pub-3940256099942544/6300978111'
     : 'ca-app-pub-7904413176110804/3467983938';
+
+// কপির সময় পুরো পর্দার বিজ্ঞাপন (আসল আইডি পরে বসাবেন)
+const interstitialUnitId = useTestAds
+    ? 'ca-app-pub-3940256099942544/1033173712'
+    : 'ca-app-pub-7904413176110804/REPLACE_LATER';
+
+// কত বার কপিতে একবার বিজ্ঞাপন আসবে (১ = প্রতিবার, ২ = প্রতি দ্বিতীয়বার)
+const adEveryNCopies = 1;
 
 class PromptItem {
   final String id;
@@ -174,6 +193,65 @@ const kBg = Color(0xFF021A33);
 const kCard = Color(0xFF0A2540);
 const kAccent = Color(0xFF0D2F5E);
 
+// পুরো পর্দার বিজ্ঞাপন। দেখানোর পর (বা বিজ্ঞাপন না থাকলে সাথে সাথে) onDone চলে।
+class InterstitialHelper {
+  static InterstitialAd? _ad;
+  static bool _loading = false;
+  static int _count = 0;
+
+  static Future<void> load() async {
+    if (_ad != null || _loading) return;
+    _loading = true;
+    try {
+      await MobileAds.instance.initialize();
+      await InterstitialAd.load(
+        adUnitId: interstitialUnitId,
+        request: const AdRequest(),
+        adLoadCallback: InterstitialAdLoadCallback(
+          onAdLoaded: (ad) {
+            _ad = ad;
+            _loading = false;
+          },
+          onAdFailedToLoad: (error) {
+            _ad = null;
+            _loading = false;
+          },
+        ),
+      );
+    } catch (_) {
+      _loading = false;
+    }
+  }
+
+  static void showThen(VoidCallback onDone) {
+    _count++;
+    if (_count % adEveryNCopies != 0) {
+      onDone();
+      return;
+    }
+    final ad = _ad;
+    if (ad == null) {
+      load();
+      onDone();
+      return;
+    }
+    _ad = null;
+    ad.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent: (ad) {
+        ad.dispose();
+        load();
+        onDone();
+      },
+      onAdFailedToShowFullScreenContent: (ad, error) {
+        ad.dispose();
+        load();
+        onDone();
+      },
+    );
+    ad.show();
+  }
+}
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const EasyPromptApp());
@@ -213,7 +291,6 @@ class BannerAdBox extends StatefulWidget {
 class _BannerAdBoxState extends State<BannerAdBox> {
   BannerAd? _ad;
   bool _loaded = false;
-  String? _err;
 
   @override
   void initState() {
@@ -224,8 +301,7 @@ class _BannerAdBoxState extends State<BannerAdBox> {
   Future<void> _start() async {
     try {
       await MobileAds.instance.initialize();
-    } catch (e) {
-      if (mounted) setState(() => _err = 'init: $e');
+    } catch (_) {
       return;
     }
     if (!mounted) return;
@@ -243,7 +319,6 @@ class _BannerAdBoxState extends State<BannerAdBox> {
             setState(() {
               _ad = null;
               _loaded = false;
-              _err = 'ad ${error.code}: ${error.message}';
             });
           }
         },
@@ -262,16 +337,6 @@ class _BannerAdBoxState extends State<BannerAdBox> {
   @override
   Widget build(BuildContext context) {
     final ad = _ad;
-    if (_err != null) {
-      // পরীক্ষার জন্য: বিজ্ঞাপন না এলে কারণ দেখায়
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(6),
-        color: kBg,
-        child: Text(_err!,
-            style: const TextStyle(fontSize: 11, color: Colors.white54)),
-      );
-    }
     if (!_loaded || ad == null) return const SizedBox.shrink();
     return Container(
       color: kBg,
@@ -303,6 +368,7 @@ class _RootShellState extends State<RootShell> {
     super.initState();
     store.load();
     itemsStore.load();
+    InterstitialHelper.load();
   }
 
   @override
@@ -665,6 +731,16 @@ class _DetailPageState extends State<DetailPage> {
     super.dispose();
   }
 
+  void _copyPrompt() {
+    // আগে বিজ্ঞাপন, বিজ্ঞাপন শেষ হলে কপি
+    InterstitialHelper.showThen(() {
+      Clipboard.setData(ClipboardData(text: widget.item.prompt));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Prompt কপি হয়েছে')));
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
@@ -728,11 +804,7 @@ class _DetailPageState extends State<DetailPage> {
           child: FilledButton.icon(
             icon: const Icon(Icons.copy),
             label: const Text('Copy Prompt'),
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: item.prompt));
-              ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Prompt কপি হয়েছে')));
-            },
+            onPressed: _copyPrompt,
           ),
         ),
       ),
