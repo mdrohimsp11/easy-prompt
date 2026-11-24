@@ -1,11 +1,12 @@
 name: Build APK
 
 on:
-  workflow_dispatch:
   push:
     branches: [main]
     paths-ignore:
-      - "media/**"
+      - 'media/**'
+      - 'privacy.html'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -16,49 +17,69 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
 
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
 
-      - name: Create Android scaffold
-        run: flutter create --platforms=android --project-name easy_prompt --org com.example.easyprompt .
+      - name: Create Android project
+        run: flutter create --platforms=android --org com.easyprompt --project-name easy_prompt .
+
+      - name: Set app name and icon
+        run: |
+          sed -i 's/android:label="[^"]*"/android:label="Easy Prompt"/' android/app/src/main/AndroidManifest.xml
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            cp ic_launcher-$d.png android/app/src/main/res/mipmap-$d/ic_launcher.png
+          done
 
       - name: Add INTERNET permission
         run: |
-          sed -i '0,/<application/s//<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' android/app/src/main/AndroidManifest.xml
+          sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' android/app/src/main/AndroidManifest.xml
 
       - name: Add AdMob app ID
         run: |
-          sed -i '0,/<activity/s//<meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-7904413176110804~1103429064"\/>\n        <activity/' android/app/src/main/AndroidManifest.xml
-          grep APPLICATION_ID android/app/src/main/AndroidManifest.xml
-
-      - name: Disable lint checks for release build
-        run: |
-          sed -i '0,/^android {/s//android {\n    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }\n/' android/app/build.gradle.kts
-          grep -n -A4 "^android {" android/app/build.gradle.kts
-
-      - name: Turn off minify and add keep rules
-        run: |
-          cat > android/app/proguard-rules.pro <<'EOF'
-          -keep class androidx.work.** { *; }
-          -keep class androidx.room.** { *; }
-          -keep class * extends androidx.room.RoomDatabase { *; }
-          -dontwarn androidx.work.**
-          EOF
-          sed -i 's/signingConfig = signingConfigs.getByName("debug")/signingConfig = signingConfigs.getByName("debug")\n            isMinifyEnabled = false\n            isShrinkResources = false\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")/' android/app/build.gradle.kts
-          grep -n -B3 -A6 "release {" android/app/build.gradle.kts
+          sed -i 's#</application>#    <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-7904413176110804~1103429064"/>\n    </application>#' android/app/src/main/AndroidManifest.xml
 
       - name: Set up permanent release signing
         env:
           KS_BASE64: ${{ secrets.KS_BASE64 }}
         run: |
           echo "$KS_BASE64" | base64 -d > android/app/upload-keystore.jks
-          ls -l android/app/upload-keystore.jks
-          sed -i '0,/^android {/s//android {\n    signingConfigs {\n        create("release") {\n            storeFile = file("upload-keystore.jks")\n            storePassword = System.getenv("KS_PASS")\n            keyAlias = "upload"\n            keyPassword = System.getenv("KS_PASS")\n        }\n    }\n/' android/app/build.gradle.kts
-          sed -i 's/signingConfigs.getByName("debug")/signingConfigs.getByName("release")/' android/app/build.gradle.kts
-          grep -n "signingConfig" android/app/build.gradle.kts
+
+      - name: Patch Gradle (lint, minify, signing)
+        run: |
+          cat > android/app/proguard-rules.pro <<'PRO'
+          -keep class androidx.work.** { *; }
+          -keep class androidx.room.** { *; }
+          -dontwarn **
+          PRO
+          python3 - <<'PY'
+          p = "android/app/build.gradle.kts"
+          s = open(p).read()
+          s = s.replace("android {", "android {\n    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }", 1)
+          signing = (
+              "    signingConfigs {\n"
+              "        create(\"release\") {\n"
+              "            storeFile = file(\"upload-keystore.jks\")\n"
+              "            storePassword = System.getenv(\"KS_PASS\")\n"
+              "            keyAlias = \"upload\"\n"
+              "            keyPassword = System.getenv(\"KS_PASS\")\n"
+              "        }\n"
+              "    }\n\n"
+              "    buildTypes {"
+          )
+          s = s.replace("    buildTypes {", signing, 1)
+          s = s.replace(
+              'signingConfig = signingConfigs.getByName("debug")',
+              'signingConfig = signingConfigs.getByName("release")\n'
+              '            isMinifyEnabled = false\n'
+              '            isShrinkResources = false\n'
+              '            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")',
+              1)
+          open(p, "w").write(s)
+          PY
+          grep -n "release\|lint\|isMinify" android/app/build.gradle.kts
 
       - run: flutter pub get
 
@@ -70,8 +91,8 @@ jobs:
       - name: Show APK signature
         continue-on-error: true
         run: |
-          APKSIGNER=$(ls $ANDROID_HOME/build-tools/*/apksigner | tail -1)
-          $APKSIGNER verify --print-certs build/app/outputs/flutter-apk/app-release.apk | grep -E "Signer #1 certificate (DN|SHA-256)"
+          AS=$(ls $ANDROID_HOME/build-tools/*/apksigner | tail -1)
+          $AS verify --print-certs build/app/outputs/flutter-apk/app-release.apk | head -5
 
       - uses: actions/upload-artifact@v4
         with:
@@ -88,14 +109,11 @@ jobs:
         continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: 30
           arch: x86_64
           script: |
             adb install -r build/app/outputs/flutter-apk/app-release.apk
             adb logcat -c
-            adb shell monkey -p com.example.easyprompt.easy_prompt -c android.intent.category.LAUNCHER 1
-            sleep 25
-            echo ===== CRASH LOG =====
-            adb logcat -d -b crash
-            echo ===== FILTERED LOG =====
-            adb logcat -d | grep -E "FATAL|AndroidRuntime|easy_prompt|Exception" | head -80
+            adb shell monkey -p com.easyprompt.easy_prompt -c android.intent.category.LAUNCHER 1
+            sleep 20
+            adb logcat -d | grep -iE "FATAL|AndroidRuntime|easyprompt" | head -50
