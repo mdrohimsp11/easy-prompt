@@ -14,17 +14,20 @@ const mediaFolder = 'media';
 const rawBase =
     'https://raw.githubusercontent.com/$repoOwner/$repoName/main/$mediaFolder';
 
-// বিজ্ঞাপন: এখন টেস্ট বিজ্ঞাপন চলছে।
-// Play Store-এ তোলার আগে নিচের true-কে false করবেন।
-const useTestAds = true;
-const bannerUnitId = useTestAds
-    ? 'ca-app-pub-3940256099942544/6300978111'
-    : 'ca-app-pub-7904413176110804/3467983938';
+// বিজ্ঞাপন
+// useTestAds = true হলে সবার জন্য টেস্ট বিজ্ঞাপন। এখন false = আসল বিজ্ঞাপন।
+const useTestAds = false;
+const testBannerId = 'ca-app-pub-3940256099942544/6300978111';
+const testInterstitialId = 'ca-app-pub-3940256099942544/1033173712';
+const realBannerId = 'ca-app-pub-7904413176110804/3467983938';
+const realInterstitialId = 'ca-app-pub-7904413176110804/6793889385';
 
-// কপির সময় পুরো পর্দার বিজ্ঞাপন (আসল আইডি পরে বসাবেন)
-const interstitialUnitId = useTestAds
-    ? 'ca-app-pub-3940256099942544/1033173712'
-    : 'ca-app-pub-7904413176110804/REPLACE_LATER';
+// মেনুতে About চেপে ধরলে এই ফোনে টেস্ট বিজ্ঞাপন চালু/বন্ধ হয়
+bool testAdsOn = false;
+
+String get bannerId => (useTestAds || testAdsOn) ? testBannerId : realBannerId;
+String get interstitialId =>
+    (useTestAds || testAdsOn) ? testInterstitialId : realInterstitialId;
 
 // কত বার কপিতে একবার বিজ্ঞাপন আসবে (১ = প্রতিবার, ২ = প্রতি দ্বিতীয়বার)
 const adEveryNCopies = 1;
@@ -224,7 +227,7 @@ class InterstitialHelper {
     try {
       await MobileAds.instance.initialize();
       await InterstitialAd.load(
-        adUnitId: interstitialUnitId,
+        adUnitId: interstitialId,
         request: const AdRequest(),
         adLoadCallback: InterstitialAdLoadCallback(
           onAdLoaded: (ad) {
@@ -271,8 +274,12 @@ class InterstitialHelper {
   }
 }
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    testAdsOn = prefs.getBool('test_ads') ?? false;
+  } catch (_) {}
   runApp(const EasyPromptApp());
 }
 
@@ -325,7 +332,7 @@ class _BannerAdBoxState extends State<BannerAdBox> {
     }
     if (!mounted) return;
     final ad = BannerAd(
-      adUnitId: bannerUnitId,
+      adUnitId: bannerId,
       size: AdSize.banner,
       request: const AdRequest(),
       listener: BannerAdListener(
@@ -697,18 +704,33 @@ class MenuPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(16),
-      children: const [
-        Padding(
+      children: [
+        const Padding(
           padding: EdgeInsets.fromLTRB(8, 8, 8, 16),
           child: Text('Menu',
               style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
         ),
-        ListTile(leading: Icon(Icons.star_border), title: Text('Rate app')),
-        ListTile(leading: Icon(Icons.share), title: Text('Share app')),
-        ListTile(
+        const ListTile(
+            leading: Icon(Icons.star_border), title: Text('Rate app')),
+        const ListTile(leading: Icon(Icons.share), title: Text('Share app')),
+        const ListTile(
             leading: Icon(Icons.privacy_tip_outlined),
             title: Text('Privacy Policy')),
-        ListTile(leading: Icon(Icons.info_outline), title: Text('About')),
+        ListTile(
+          leading: const Icon(Icons.info_outline),
+          title: const Text('About'),
+          // গোপন সুইচ: চেপে ধরলে এই ফোনে টেস্ট বিজ্ঞাপন চালু/বন্ধ হয়
+          onLongPress: () async {
+            final prefs = await SharedPreferences.getInstance();
+            final on = !(prefs.getBool('test_ads') ?? false);
+            await prefs.setBool('test_ads', on);
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(on
+                    ? 'Test ads ON (অ্যাপ বন্ধ করে আবার খুলুন)'
+                    : 'Test ads OFF (অ্যাপ বন্ধ করে আবার খুলুন)')));
+          },
+        ),
       ],
     );
   }
