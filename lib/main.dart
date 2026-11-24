@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 // GitHub রিপোজিটরির তথ্য
@@ -13,6 +14,10 @@ const repoName = 'easy-prompt';
 const mediaFolder = 'media';
 const rawBase =
     'https://raw.githubusercontent.com/$repoOwner/$repoName/main/$mediaFolder';
+
+// Privacy Policy ও যোগাযোগ
+const privacyUrl = 'https://mdrohimsp11.github.io/easy-prompt/privacy.html';
+const contactEmail = 'mdrohimsp33@gmail.com';
 
 // বিজ্ঞাপন
 // useTestAds = true হলে সবার জন্য টেস্ট বিজ্ঞাপন। এখন false = আসল বিজ্ঞাপন।
@@ -700,6 +705,17 @@ class SavedPage extends StatelessWidget {
 class MenuPage extends StatelessWidget {
   const MenuPage({super.key});
 
+  Future<void> _openPrivacy(BuildContext context) async {
+    try {
+      final ok = await launchUrl(Uri.parse(privacyUrl),
+          mode: LaunchMode.externalApplication);
+      if (ok) return;
+    } catch (_) {}
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('লিংক খোলা যায়নি')));
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -713,12 +729,25 @@ class MenuPage extends StatelessWidget {
         const ListTile(
             leading: Icon(Icons.star_border), title: Text('Rate app')),
         const ListTile(leading: Icon(Icons.share), title: Text('Share app')),
-        const ListTile(
-            leading: Icon(Icons.privacy_tip_outlined),
-            title: Text('Privacy Policy')),
+        ListTile(
+          leading: const Icon(Icons.privacy_tip_outlined),
+          title: const Text('Privacy Policy'),
+          onTap: () => _openPrivacy(context),
+        ),
         ListTile(
           leading: const Icon(Icons.info_outline),
           title: const Text('About'),
+          onTap: () => showAboutDialog(
+            context: context,
+            applicationName: 'Easy Prompt',
+            applicationVersion: '1.0.0',
+            children: const [
+              SizedBox(height: 12),
+              Text('Trending AI video prompts.'),
+              SizedBox(height: 8),
+              Text('Contact: $contactEmail'),
+            ],
+          ),
           // গোপন সুইচ: চেপে ধরলে এই ফোনে টেস্ট বিজ্ঞাপন চালু/বন্ধ হয়
           onLongPress: () async {
             final prefs = await SharedPreferences.getInstance();
